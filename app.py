@@ -315,15 +315,19 @@ class App:
         t = self.f_btn.render(text, True, tc)
         self.screen.blit(t, t.get_rect(center=draw_rect.center))
 
-    def _draw_selector(self, rect, text, mp):
-        hovered = rect.collidepoint(mp)
-        ht = self._get_btn_hover_t("sel" + str(rect.x) + str(rect.y), hovered)
-        col = _lerp_color(BTN_NORMAL, BTN_HOVER, ht)
+    def _draw_selector(self, rect, text, mp, enabled=True):
+        hovered = enabled and rect.collidepoint(mp)
+        key = "sel" + str(rect.x) + str(rect.y)
+        ht = 0 if not enabled else self._get_btn_hover_t(key, hovered)
+        col = (BTN_DISABLED if not enabled
+               else _lerp_color(BTN_NORMAL, BTN_HOVER, ht))
         self._rounded_rect(self.screen, col, rect, 8)
-        border_col = _lerp_color(BTN_BORDER, (60, 90, 110), ht)
+        border_col = (BTN_BORDER if not enabled
+                      else _lerp_color(BTN_BORDER, (60, 90, 110), ht))
         pygame.draw.rect(self.screen, border_col, rect, 1, border_radius=8)
-        label = f"\u25c4  {text}  \u25ba"
-        tc = _lerp_color(BTN_TEXT, WHITE, ht)
+        label = text if not enabled else f"\u25c4  {text}  \u25ba"
+        tc = (BTN_TEXT_DISABLED if not enabled
+              else _lerp_color(BTN_TEXT, WHITE, ht))
         t = self.f_sm.render(label, True, tc)
         self.screen.blit(t, t.get_rect(center=rect.center))
 
@@ -457,7 +461,8 @@ class App:
             ("GAME MODES", [
                 "• SinglePlayer: 1 or 2 AI opponents; Player 1 can be",
                 "  Human or AI (Random, MCTS, Minimax).",
-                "• Multiplayer: Play with 1 or 2 friends on the same device.",
+                "• Multiplayer: 1 or 2 friends locally; 3-player can use AI",
+                "  for Player 3 (Random, MCTS, Minimax).",
             ]),
             ("CONTROLS", [
                 "• Left-click a column to drop your disc.",
@@ -620,7 +625,18 @@ class App:
                     else:
                         self.cfg_type[i] = AI_TYPES.index(AI_TYPES_SP[0])
                 elif self.game_mode == MODE_MULTI:
-                    pass
+                    if self.num_p >= 3 and i == 2:
+                        cur_type = AI_TYPES[self.cfg_type[i]]
+                        if cur_type == "Human":
+                            self.cfg_type[i] = AI_TYPES.index(AI_TYPES_SP[0])
+                        elif cur_type in AI_TYPES_SP:
+                            idx = AI_TYPES_SP.index(cur_type)
+                            next_idx = (idx + 1) % len(AI_TYPES_SP)
+                            if next_idx == 0:
+                                self.cfg_type[i] = 0
+                            else:
+                                self.cfg_type[i] = AI_TYPES.index(
+                                    AI_TYPES_SP[next_idx])
                 else:
                     self.cfg_type[i] = (self.cfg_type[i] + 1) % len(AI_TYPES)
 
@@ -870,7 +886,9 @@ class App:
         if self.game_mode == MODE_SINGLE:
             desc = "Configure Player 1 as Human or AI — add 1 or 2 AI opponents"
         else:
-            desc = "Play with friends — add 1 or 2 players"
+            desc = (
+                "Play with friends — in 3-player, Player 3 can be Human or AI"
+            )
         dt = self.f_sm.render(desc, True, TEXT_DIM)
         self.screen.blit(dt, dt.get_rect(center=(SCREEN_WIDTH // 2, desc_y)))
 
@@ -922,8 +940,11 @@ class App:
                                     PLAYER_COLORS[p])
             self.screen.blit(lbl, (220, y + 8))
 
-            self._draw_selector(self._cfg_type_rect(i),
-                                AI_TYPES[self.cfg_type[i]], mp)
+            mp_p12_locked = self.game_mode == MODE_MULTI and i < 2
+            self._draw_selector(
+                self._cfg_type_rect(i),
+                AI_TYPES[self.cfg_type[i]], mp,
+                enabled=not mp_p12_locked)
 
             tp = AI_TYPES[self.cfg_type[i]]
             if tp == "MCTS":
