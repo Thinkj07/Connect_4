@@ -82,6 +82,16 @@ MINIMAX_DEPTHS = [2, 3, 4, 5, 6]
 MODE_SINGLE = "singleplayer"
 MODE_MULTI = "multiplayer"
 
+# Scoring system
+SCORE_CONNECT_2 = 2
+SCORE_CONNECT_3 = 15
+SCORE_CONNECT_4 = 1000
+SCORE_BLOCK_3 = 30
+SCORE_COMBO_MULTIPLIER = 1.5
+
+# Center columns for tie-breaker (0-indexed columns 3 and 4 are center in 8-col board)
+CENTER_COLS = [3, 4]
+
 SAVE_FILE = "savegame.json"
 FONT_PATH = "assets/font/LowresPixel-Regular.otf"
 DISC_PATH = "assets/sprite/disc-mod.png"

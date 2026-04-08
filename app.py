@@ -213,6 +213,8 @@ class App:
         self.ais: list = [None, None, None]
         self.winner = 0
         self.win_cells: list = []
+        self.scores = {1: 0, 2: 0, 3: 0}
+        self.win_reason = ""  # "connect4", "sudden_victory", "board_full", "tie"
 
         self.cfg_type = [0, 0, 0]
         self.cfg_mcts = [2, 2, 2]
@@ -443,13 +445,25 @@ class App:
     def _htp_rules(self):
         return [
             ("OBJECTIVE", [
-                "Be the first player to connect 4 of your discs",
-                "in a row — horizontally, vertically, or diagonally!",
+                "Connect 4 discs in a row (horizontal, vertical, or diagonal)",
+                "to score 1000 points. Highest score wins!",
+            ]),
+            ("SCORING SYSTEM", [
+                "• Connect 2: 2 points",
+                "• Connect 3: 15 points",
+                "• Connect 4: 1000 points (Grand Slam!)",
+                "Note: Only the longest sequence in each line counts.",
+            ]),
+            ("WIN CONDITIONS", [
+                "• Sudden Victory: Create 2+ Connect 4 lines = instant win!",
+                "• Regular Win: First Connect 4 usually wins (~99%).",
+                "• Board Full: Player with highest score wins.",
+                "• Tie-breaker: Longest sequence, then center control.",
             ]),
             ("GAMEPLAY", [
                 "• Players take turns dropping a disc into one of the 8 columns.",
                 "• The disc falls to the lowest empty cell.",
-                "• If the board fills up with no winner the game ends in a draw.",
+                "• Scores update in real-time after each move.",
             ]),
             ("GAME MODES", [
                 "• SinglePlayer: 1 or 2 AI opponents; Player 1 can be",
@@ -675,9 +689,11 @@ class App:
     def _over_btns(self):
         cx = SCREEN_WIDTH // 2
         w, h, gap = 180, 48, 20
+        # Adjust Y position based on number of players
+        btn_y = 350 + self.num_p * 50
         return [
-            (pygame.Rect(cx - w - gap // 2, 440, w, h), "Play Again"),
-            (pygame.Rect(cx + gap // 2, 440, w, h), "Main Menu"),
+            (pygame.Rect(cx - w - gap // 2, btn_y, w, h), "Play Again"),
+            (pygame.Rect(cx + gap // 2, btn_y, w, h), "Main Menu"),
         ]
 
     def _ev_over(self, ev, mp):
@@ -723,21 +739,44 @@ class App:
                     self.anim_y = self.anim_target
                     self.anim = False
                     row = self.board.drop(self.anim_col, self.anim_p)
-                    w = self.board.check_win_at(row, self.anim_col)
-                    if w:
-                        self.winner = w
-                        self.win_cells = self.board.winning_cells_at(
-                            row, self.anim_col)
+                    
+                    # Update scores after each move
+                    self.scores = self.board.calculate_scores(self.num_p)
+                    
+                    # Check for Sudden Victory (2+ Connect 4 lines)
+                    if self.board.check_sudden_victory(self.anim_p):
+                        self.winner = self.anim_p
+                        self.win_cells = self.board.winning_cells_at(row, self.anim_col)
+                        self.win_reason = "sudden_victory"
                         self.state = "gameover"
                         self.flash_t = 0
                         self._play(self.snd_win)
                         return
-                    if self.board.is_full():
-                        self.winner = 0
-                        self.win_cells = []
+                    
+                    # Check for regular Connect 4 win
+                    w = self.board.check_win_at(row, self.anim_col)
+                    if w:
+                        self.winner = w
+                        self.win_cells = self.board.winning_cells_at(row, self.anim_col)
+                        self.win_reason = "connect4"
                         self.state = "gameover"
                         self.flash_t = 0
+                        self._play(self.snd_win)
                         return
+                    
+                    # Check if board is full - determine winner by score
+                    if self.board.is_full():
+                        winner, scores, tie_info = self.board.determine_winner_by_score(self.num_p)
+                        self.scores = scores
+                        self.winner = winner
+                        self.win_cells = []
+                        self.win_reason = "board_full" if winner else "tie"
+                        self.state = "gameover"
+                        self.flash_t = 0
+                        if winner:
+                            self._play(self.snd_win)
+                        return
+                    
                     self.cur = self.cur % self.num_p + 1
                     self.ai_wait = 0
             return
@@ -929,6 +968,7 @@ class App:
     def _dr_game(self, mp):
         self._draw_turn_indicator()
         self._draw_board()
+        self._draw_scoreboard()
         if self.hcol >= 0 and not self.anim:
             self._draw_hover()
         if self.anim:
@@ -961,15 +1001,99 @@ class App:
         ov = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
         ov.fill((250, 245, 235, 180))
         self.screen.blit(ov, (0, 0))
+        
+        # Main result message
         if self.winner:
             msg = f"{PLAYER_NAMES[self.winner]} Wins!"
             col = PLAYER_COLORS[self.winner]
         else:
             msg = "It's a Draw!"
             col = TEXT_COLOR
-        self._shadow_text(self.f_xl, msg, SCREEN_WIDTH // 2, 330, col)
+        self._shadow_text(self.f_xl, msg, SCREEN_WIDTH // 2, 200, col)
+        
+        # Win reason subtitle
+        reason_text = ""
+        if self.win_reason == "sudden_victory":
+            reason_text = "Sudden Victory! (2+ Connect 4 lines)"
+        elif self.win_reason == "connect4":
+            reason_text = "Connect 4!"
+        elif self.win_reason == "board_full":
+            reason_text = "Board Full - Highest Score Wins!"
+        elif self.win_reason == "tie":
+            reason_text = "Board Full - Complete Tie!"
+        
+        if reason_text:
+            rt = self.f_sub.render(reason_text, True, TEXT_DIM)
+            self.screen.blit(rt, rt.get_rect(center=(SCREEN_WIDTH // 2, 248)))
+        
+        # Final scores panel
+        self._draw_final_scores()
+        
         for rect, label in self._over_btns():
             self._draw_button(rect, label, mp)
+
+    def _draw_final_scores(self):
+        """Draw final scores panel in game over screen."""
+        # Panel dimensions
+        panel_w = 400
+        panel_h = 50 + self.num_p * 50
+        panel_x = (SCREEN_WIDTH - panel_w) // 2
+        panel_y = 280
+        
+        panel_rect = pygame.Rect(panel_x, panel_y, panel_w, panel_h)
+        
+        # Shadow
+        shadow = pygame.Surface((panel_w + 6, panel_h + 6), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0, 0, 0, 25), (3, 4, panel_w, panel_h), border_radius=12)
+        self.screen.blit(shadow, (panel_x - 3, panel_y - 2))
+        
+        # Panel background
+        pygame.draw.rect(self.screen, CREAM, panel_rect, border_radius=12)
+        pygame.draw.rect(self.screen, PANEL_BORDER, panel_rect, 2, border_radius=12)
+        
+        # Title
+        title = self.f_sub.render("FINAL SCORES", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(panel_x + panel_w // 2, panel_y + 22)))
+        
+        # Divider
+        pygame.draw.line(self.screen, CREAM_DARK, 
+                        (panel_x + 15, panel_y + 42), 
+                        (panel_x + panel_w - 15, panel_y + 42), 1)
+        
+        # Sort players by score descending
+        sorted_players = sorted(range(1, self.num_p + 1), 
+                               key=lambda p: self.scores.get(p, 0), 
+                               reverse=True)
+        
+        for idx, p in enumerate(sorted_players):
+            row_y = panel_y + 55 + idx * 50
+            
+            # Rank indicator
+            rank = idx + 1
+            rank_colors = {1: (255, 215, 0), 2: (192, 192, 192), 3: (205, 127, 50)}
+            rank_col = rank_colors.get(rank, TEXT_DIM)
+            rank_text = self.f_sm.render(f"#{rank}", True, rank_col)
+            self.screen.blit(rank_text, (panel_x + 20, row_y + 8))
+            
+            # Mini disc
+            disc = self.mini_discs[p]
+            self.screen.blit(disc, disc.get_rect(center=(panel_x + 70, row_y + 16)))
+            
+            # Player name
+            name_text = self.f_sub.render(PLAYER_NAMES[p], True, PLAYER_COLORS[p])
+            self.screen.blit(name_text, (panel_x + 95, row_y + 4))
+            
+            # Score
+            score = self.scores.get(p, 0)
+            score_text = self.f_med.render(str(score), True, PLAYER_COLORS[p])
+            self.screen.blit(score_text, score_text.get_rect(right=panel_x + panel_w - 20, centery=row_y + 16))
+            
+            # Highlight winner
+            if p == self.winner:
+                hl_rect = pygame.Rect(panel_x + 8, row_y - 6, panel_w - 16, 44)
+                hl_surf = pygame.Surface((hl_rect.w, hl_rect.h), pygame.SRCALPHA)
+                pygame.draw.rect(hl_surf, (*PLAYER_COLORS[p], 30), (0, 0, hl_rect.w, hl_rect.h), border_radius=8)
+                self.screen.blit(hl_surf, hl_rect.topleft)
 
     def _draw_board(self, highlight=False):
         """Bitmap board, shadows, and placed pieces (optional win glow)."""
@@ -1043,6 +1167,58 @@ class App:
         self.screen.blit(ds, ds.get_rect(center=(sx + dw // 2, 78)))
         self.screen.blit(t, (sx + dw + 10, 78 - t.get_height() // 2))
 
+    def _draw_scoreboard(self):
+        """Draw scoreboard panel showing all players' scores."""
+        if not self.board:
+            return
+        
+        # Scoreboard position - right side of the board
+        sb_x = BOARD_BLIT_X + BOARD_BLIT_W + 20
+        sb_y = BOARD_BLIT_Y + 10
+        sb_w = SCREEN_WIDTH - sb_x - 20
+        sb_h = 60 + self.num_p * 58
+        
+        # Draw panel background
+        panel_rect = pygame.Rect(sb_x, sb_y, sb_w, sb_h)
+        
+        # Shadow
+        shadow = pygame.Surface((sb_w + 6, sb_h + 6), pygame.SRCALPHA)
+        pygame.draw.rect(shadow, (0, 0, 0, 20), (3, 4, sb_w, sb_h), border_radius=12)
+        self.screen.blit(shadow, (sb_x - 3, sb_y - 2))
+        
+        # Panel
+        pygame.draw.rect(self.screen, CREAM, panel_rect, border_radius=12)
+        pygame.draw.rect(self.screen, PANEL_BORDER, panel_rect, 2, border_radius=12)
+        
+        # Title
+        title = self.f_sub.render("SCORES", True, TEXT_COLOR)
+        self.screen.blit(title, title.get_rect(center=(sb_x + sb_w // 2, sb_y + 24)))
+        
+        # Divider
+        div_y = sb_y + 44
+        pygame.draw.line(self.screen, CREAM_DARK, (sb_x + 10, div_y), (sb_x + sb_w - 10, div_y), 1)
+        
+        # Player scores
+        for i in range(self.num_p):
+            p = i + 1
+            row_y = sb_y + 58 + i * 58
+            
+            # Mini disc
+            disc = self.mini_discs[p]
+            self.screen.blit(disc, disc.get_rect(center=(sb_x + 28, row_y + 18)))
+            
+            # Score
+            score = self.scores.get(p, 0)
+            score_text = self.f_med.render(str(score), True, PLAYER_COLORS[p])
+            self.screen.blit(score_text, score_text.get_rect(right=sb_x + sb_w - 15, centery=row_y + 18))
+            
+            # Highlight current player
+            if p == self.cur:
+                highlight_rect = pygame.Rect(sb_x + 4, row_y - 4, sb_w - 8, 48)
+                hl_surf = pygame.Surface((highlight_rect.w, highlight_rect.h), pygame.SRCALPHA)
+                pygame.draw.rect(hl_surf, (*PLAYER_COLORS[p], 25), (0, 0, highlight_rect.w, highlight_rect.h), border_radius=8)
+                self.screen.blit(hl_surf, highlight_rect.topleft)
+
     def _is_human(self):
         """True if the current player is human-controlled."""
         return self.ptypes[self.cur - 1] == "Human"
@@ -1076,6 +1252,8 @@ class App:
         self.cur = 1
         self.winner = 0
         self.win_cells = []
+        self.win_reason = ""
+        self.scores = {p: 0 for p in range(1, self.num_p + 1)}
         self.anim = False
         self.ai_wait = 0
         self.hcol = -1
@@ -1135,6 +1313,9 @@ class App:
                     self.ais[i] = MinimaxAI(MINIMAX_DEPTHS[self.cfg_mm[i]])
             self.winner = 0
             self.win_cells = []
+            self.win_reason = ""
+            # Recalculate scores from current board state
+            self.scores = self.board.calculate_scores(self.num_p)
             self.anim = False
             self.ai_wait = 0
             self.hcol = -1
