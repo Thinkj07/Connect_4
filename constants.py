@@ -81,6 +81,17 @@ MINIMAX_DEPTHS = [2, 3, 4, 5, 6]
 
 MODE_SINGLE = "singleplayer"
 MODE_MULTI = "multiplayer"
+MODE_ONLINE = "online"
+
+# Online settings
+DEFAULT_SERVER_URL = "http://localhost:8000"
+PRODUCTION_SERVER_URL = "https://your-server.onrender.com"
+CONNECTION_TIMEOUT = 10
+RECONNECT_ATTEMPTS = 3
+DEFAULT_PLAYER_NAME = "Player"
+ROOM_CODE_LEN = 6
+MAX_ROOM_NAME_LEN = 24
+MAX_PLAYER_NAME_LEN = 16
 
 # Scoring system
 SCORE_CONNECT_2 = 2

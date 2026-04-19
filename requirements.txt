@@ -1,0 +1,2 @@
+pygame>=2.0.0
+python-socketio[client]>=5.8.0

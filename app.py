@@ -10,6 +10,7 @@ import array
 from constants import *
 from board import Board
 from ai import RandomAI, MCTSAI, MinimaxAI
+from online_ui import OnlineUIMixin
 
 
 def _ease_out_quad(t):
@@ -148,7 +149,7 @@ def _cell_center(row, col):
             BOARD_Y + row * CELL_STRIDE + CELL_CENTER_OFF)
 
 
-class App:
+class App(OnlineUIMixin):
     """State machine: menu → config → play; rendering and persistence."""
 
     def __init__(self):
@@ -251,6 +252,9 @@ class App:
 
         self._htp_scroll = 0
 
+        self._pending_online_action = None
+        self._online_init()
+
 
     def _play(self, snd):
         if self.sound_ok:
@@ -293,26 +297,50 @@ class App:
         if not enabled:
             col = BTN_DISABLED
             tc = BTN_TEXT_DISABLED
+        elif selected:
+            col = _lerp_color(ACCENT_SELECTED, ACCENT_SELECTED_LT, ht)
+            tc = BTN_TEXT
         else:
             col = _lerp_color(BTN_NORMAL, BTN_HOVER, ht)
             tc = BTN_TEXT
 
-        lift = int(ht * 2)
-        shadow_surf = pygame.Surface((rect.w + 4, rect.h + 4), pygame.SRCALPHA)
-        sa = int(30 + ht * 20)
+        lift = int(ht * 3)
+        shadow_surf = pygame.Surface((rect.w + 8, rect.h + 8), pygame.SRCALPHA)
+        sa = int(35 + ht * 30)
+        if selected and enabled:
+            sa = int(45 + ht * 30)
         pygame.draw.rect(shadow_surf, (0, 0, 0, sa),
-                         (2, 3 - lift, rect.w, rect.h), border_radius=12)
-        self.screen.blit(shadow_surf, (rect.x - 2, rect.y - 1 + lift))
+                         (4, 5 - lift, rect.w, rect.h), border_radius=12)
+        self.screen.blit(shadow_surf, (rect.x - 4, rect.y - 3 + lift))
 
         draw_rect = rect.move(0, -lift)
+
+        if selected and enabled:
+            glow = pygame.Surface((rect.w + 12, rect.h + 12), pygame.SRCALPHA)
+            glow_alpha = int(70 + ht * 60)
+            pygame.draw.rect(glow, (*ACCENT_SELECTED_LT, glow_alpha),
+                             (0, 0, rect.w + 12, rect.h + 12), border_radius=16)
+            self.screen.blit(glow, (draw_rect.x - 6, draw_rect.y - 6),
+                             special_flags=pygame.BLEND_RGBA_ADD)
+
         self._rounded_rect(self.screen, col, draw_rect, 12)
         if enabled and not selected:
             border_col = _lerp_color(BTN_BORDER, (60, 90, 110), ht)
-            pygame.draw.rect(self.screen, border_col, draw_rect, 1, border_radius=12)
+            border_w = 2 if hovered else 1
+            pygame.draw.rect(self.screen, border_col, draw_rect, border_w,
+                             border_radius=12)
         elif selected:
             b = (MODE_SELECT_SELECTED_BORDER if mode_select_style
                  else ACCENT_SELECTED_LT)
-            pygame.draw.rect(self.screen, b, draw_rect, 1, border_radius=12)
+            pygame.draw.rect(self.screen, b, draw_rect, 3, border_radius=12)
+            inner = draw_rect.inflate(-6, -6)
+            pygame.draw.rect(self.screen, (255, 255, 255, 40), inner,
+                             1, border_radius=10)
+
+        if selected and enabled:
+            cx = draw_rect.x + 14
+            cy = draw_rect.centery
+            pygame.draw.circle(self.screen, ACCENT_SELECTED, (cx, cy), 5, 1)
 
         t = self.f_btn.render(text, True, tc)
         self.screen.blit(t, t.get_rect(center=draw_rect.center))
@@ -380,6 +408,11 @@ class App:
 
     def _event(self, ev, mp):
         """Route pygame events to the handler for *self.state*."""
+        if self._online_event(ev, mp):
+            return
+        if self.state == "paused_online":
+            self._ev_paused_online(ev, mp)
+            return
         h = {"menu": self._ev_menu, "modeselect": self._ev_modeselect,
              "howtoplay": self._ev_howtoplay, "config": self._ev_config,
              "playing": self._ev_play, "paused": self._ev_pause,
@@ -390,12 +423,13 @@ class App:
 
     def _menu_btns(self):
         x = SCREEN_WIDTH // 2 - 120
-        y0 = 370
+        y0 = 350
         return [
             (pygame.Rect(x, y0, 240, 50), "New Game", True),
             (pygame.Rect(x, y0 + 62, 240, 50), "Continue", self.has_save),
-            (pygame.Rect(x, y0 + 124, 240, 50), "How to Play", True),
-            (pygame.Rect(x, y0 + 186, 240, 50), "Quit", True),
+            (pygame.Rect(x, y0 + 124, 240, 50), "Online", True),
+            (pygame.Rect(x, y0 + 186, 240, 50), "How to Play", True),
+            (pygame.Rect(x, y0 + 248, 240, 50), "Quit", True),
         ]
 
     def _ev_menu(self, ev, mp):
@@ -408,6 +442,8 @@ class App:
                     self.state = "modeselect"
                 elif label == "Continue":
                     self._load_game()
+                elif label == "Online":
+                    self._start_online_connection()
                 elif label == "How to Play":
                     self._htp_scroll = 0
                     self.state = "howtoplay"
@@ -710,10 +746,36 @@ class App:
     def _update(self, mp):
         """Advance frame timer and playing-state logic."""
         self._tick += 1
+        self._online_update()
         if self.state == "playing":
             self._update_play(mp)
-        elif self.state == "gameover":
+        elif self.state == "playing_online":
+            self._update_play_online(mp)
+        elif self.state == "gameover" or self.state == "online_gameover":
             self.flash_t += 1
+
+    def _update_play_online(self, mp):
+        """Advance drop animation for online play; server applies authoritative move."""
+        if not self.anim:
+            return
+        self.anim_speed += DROP_ACCEL
+        self.anim_y += self.anim_speed
+        if self.anim_bounce > 0:
+            self.anim_bounce -= 1
+            self.anim_bounce_dy *= -0.4
+            self.anim_y = self.anim_target + self.anim_bounce_dy
+            if abs(self.anim_bounce_dy) < 0.5:
+                self.anim_bounce = 0
+                self.anim_y = self.anim_target
+        if self.anim_y >= self.anim_target and self.anim_bounce == 0:
+            if self.anim_speed > 5:
+                self.anim_bounce = 6
+                self.anim_bounce_dy = -self.anim_speed * 0.2
+                self.anim_y = self.anim_target
+                self.anim_speed = 0
+            else:
+                self.anim_y = self.anim_target
+                self.anim = False
 
     def _update_play(self, mp):
         """Drop animation, win/draw checks, hover column, AI moves."""
@@ -800,6 +862,11 @@ class App:
     def _draw(self, mp):
         """Clear with background and dispatch draw by *self.state*."""
         self.screen.blit(self.bg, (0, 0))
+        if self._online_draw(mp):
+            return
+        if self.state == "paused_online":
+            self._dr_paused_online(mp)
+            return
         {"menu": self._dr_menu, "modeselect": self._dr_modeselect,
          "howtoplay": self._dr_howtoplay, "config": self._dr_config,
          "playing": self._dr_game, "paused": self._dr_paused,
