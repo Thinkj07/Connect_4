@@ -29,6 +29,7 @@ from constants import (
     DEFAULT_SERVER_URL,
     MAX_PLAYER_NAME_LEN,
     MAX_ROOM_NAME_LEN,
+    MAX_SERVER_URL_LEN,
     PANEL_BORDER,
     PLAYER_COLORS,
     PLAYER_NAMES,
@@ -322,7 +323,7 @@ class OnlineUIMixin:
         if self._on_active_field == "name":
             self._on_text_event(ev, "name", MAX_PLAYER_NAME_LEN)
         elif self._on_active_field == "server":
-            self._on_text_event(ev, "server", 80)
+            self._on_text_event(ev, "server", MAX_SERVER_URL_LEN)
 
     def _navigate_online_action(self, label: str) -> None:
         if label == "Create Room":
@@ -386,7 +387,8 @@ class OnlineUIMixin:
                               self._on_server_url,
                               "Server URL",
                               active=self._on_active_field == "server",
-                              placeholder=DEFAULT_SERVER_URL)
+                              placeholder=DEFAULT_SERVER_URL,
+                              scroll_if_overflow=True)
 
         connected = bool(self._online and self._online.is_connected())
         for rect, label in self._online_menu_btns():
@@ -1117,7 +1119,8 @@ class OnlineUIMixin:
     # ------------------------------------------------------------------
 
     def _draw_text_input(self, rect, text, label, active=False,
-                         big=False, placeholder="") -> None:
+                         big=False, placeholder="",
+                         scroll_if_overflow: bool = False) -> None:
         if label:
             t = self.f_sm.render(label, True, TEXT_DIM)
             self.screen.blit(t, (rect.x, rect.y - 22))
@@ -1148,16 +1151,26 @@ class OnlineUIMixin:
         col = TEXT_COLOR if text else TEXT_MUTED
         font = self.f_med if big else self.f_body
         t = font.render(txt, True, col)
+        inner_left = rect.x + 12
+        inner_w = rect.w - 24
+        tw = t.get_width()
+        # Giống thanh Google: chữ dài thì cuộn ngang, luôn thấy phần cuối + chỗ nhấp nháy
+        caret_room = 10
+        if scroll_if_overflow and text and tw > inner_w - caret_room:
+            scroll_off = tw - (inner_w - caret_room)
+        else:
+            scroll_off = 0
+        y_text = rect.y + (rect.h - t.get_height()) // 2
         clip = self.screen.get_clip()
-        self.screen.set_clip(rect.inflate(-12, -4))
-        self.screen.blit(t, (rect.x + 12, rect.y + (rect.h - t.get_height()) // 2))
-        self.screen.set_clip(clip)
-        # Caret blink
+        inner_clip = rect.inflate(-12, -4)
+        self.screen.set_clip(inner_clip)
+        self.screen.blit(t, (inner_left - scroll_off, y_text))
+        # Caret blink (vẽ trong clip cùng với chữ)
         if active and (self._tick // 20) % 2 == 0 and text:
-            x = rect.x + 12 + t.get_width() + 2
-            x = min(x, rect.right - 8)
+            cx = inner_left - scroll_off + tw + 2
             pygame.draw.line(self.screen, TEXT_COLOR,
-                             (x, rect.y + 8), (x, rect.bottom - 8), 2)
+                             (cx, rect.y + 8), (cx, rect.bottom - 8), 2)
+        self.screen.set_clip(clip)
 
     def _draw_toast(self) -> None:
         if not self._on_toast:

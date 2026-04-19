@@ -184,6 +184,73 @@ The client's default server URL is `http://localhost:8000` — edit the URL
 field on the *Online* screen to point at a remote server. Deploy the server
 to Render, Railway, Fly.io, or any ASGI-compatible host for public access.
 
+### Deploy on Fly.io
+
+The repo includes `Dockerfile`, `.dockerignore`, and `fly.toml` so you can ship
+the same ASGI app (`server.main:socket_app`) to [Fly.io](https://fly.io).
+
+**Prerequisites**
+
+1. Install [flyctl](https://fly.io/docs/hands-on/install-flyctl/) and create a Fly account.
+2. Log in: `fly auth login`.
+
+**One-time setup**
+
+1. Open `fly.toml` and set `app` to a **globally unique** name (Fly rejects
+   names that are already taken). Example: `myname-connectfour-server`.
+2. Optionally change `primary_region` (e.g. `sin` Singapore, `hkg` Hong Kong,
+   `nrt` Tokyo) so players near you get lower latency.
+
+**Deploy**
+
+From the **repository root** (the folder that contains `Dockerfile` and
+`fly.toml`):
+
+```bash
+fly deploy
+```
+
+If Fly reports that the app does not exist yet, create it first (use the same
+name as in `fly.toml`):
+
+```bash
+fly apps create myname-connectfour-server
+fly deploy
+```
+
+Or run an interactive wizard (may generate a second config — prefer editing
+the provided `fly.toml` instead of duplicating):
+
+```bash
+fly launch
+```
+
+**After deploy**
+
+- App URL: `https://<app-name>.fly.dev`
+- Health: `https://<app-name>.fly.dev/healthz`
+- In the game: *Online* → set **Server URL** to `https://<app-name>.fly.dev`
+  (no trailing path; Socket.IO uses the same origin).
+
+**Useful commands**
+
+| Command        | Purpose                          |
+| -------------- | -------------------------------- |
+| `fly status`   | Machine state                    |
+| `fly logs`     | Server stdout / errors           |
+| `fly ssh console` | Shell inside the running VM   |
+
+**Operational notes**
+
+- Rooms and games are **in-memory** on one process. Keep **a single machine**
+  (default here) so all players hit the same state. Do not scale out multiple
+  VMs for this server without redesigning storage.
+- `min_machines_running = 0` saves cost but the first request after idle can
+  cold-start. Set `min_machines_running = 1` in `fly.toml` if you want the
+  app always warm (uses more free-tier hours).
+- Optional secrets: `fly secrets set CORS_ORIGINS="*"` — only needed if you
+  change defaults in `server/config.py`.
+
 ## Save / Load
 
 Offline games (SinglePlayer / Local Multiplayer) persist to `savegame.json`
@@ -211,6 +278,9 @@ boardgame_3/
 ├── constants.py            # All game & online constants
 ├── savegame.json           # Auto-generated save file
 ├── requirements.txt        # Client dependencies
+├── Dockerfile              # Container image for the online server (Fly.io / any host)
+├── fly.toml                # Fly.io app config (edit `app` name before deploy)
+├── .dockerignore           # Keeps Docker build context small
 ├── README.md               # This file
 │
 ├── server/                 # Online server (FastAPI + Socket.IO)
