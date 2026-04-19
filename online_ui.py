@@ -1031,8 +1031,9 @@ class OnlineUIMixin:
         cx = SCREEN_WIDTH // 2
         w, h, gap = 180, 48, 20
         btn_y = 350 + (self.num_p or 3) * 50
+
         return [
-            (pygame.Rect(cx - w - gap // 2, btn_y, w, h), "Leave"),
+            (pygame.Rect(cx - w - gap // 2, btn_y, w, h), "Back to Room"),
             (pygame.Rect(cx + gap // 2, btn_y, w, h), "Main Menu"),
         ]
 
@@ -1042,10 +1043,13 @@ class OnlineUIMixin:
         for rect, label in self._online_over_btns():
             if rect.collidepoint(mp):
                 self._play(self.snd_click)
-                if label == "Leave":
+                if label == "Back to Room":
+                    self.state = "room_lobby"
+                elif label == "Rematch":
                     if self._online:
-                        self._online.leave_room()
-                    self.state = "online_menu"
+                        self._online.request_rematch()
+                        self._toast("Rematch requested.")
+                    self.state = "room_lobby"
                 elif label == "Main Menu":
                     if self._online:
                         self._online.leave_room()
@@ -1059,10 +1063,10 @@ class OnlineUIMixin:
         # Scores dict may come with string keys
         self.scores = {int(k): int(v) for k, v in (self._on_scores or {}).items()}
         self.win_cells = self._on_win_cells
-        # Use the offline _dr_over renderer via duck-typing
+        # Use the offline _dr_over renderer via duck-typing (skip its buttons)
         if hasattr(self, "_dr_over"):
-            self._dr_over(mp)
-        # Replace default buttons with online ones
+            self._dr_over(mp, draw_buttons=False)
+        # Draw the online-specific buttons instead
         for rect, label in self._online_over_btns():
             self._draw_button(rect, label, mp)
         self._draw_toast()

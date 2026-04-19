@@ -1062,7 +1062,7 @@ class App(OnlineUIMixin):
         for rect, label in self._pause_btns():
             self._draw_button(rect, label, mp)
 
-    def _dr_over(self, mp):
+    def _dr_over(self, mp, draw_buttons=True):
         self._draw_turn_indicator()
         self._draw_board(highlight=True)
         ov = pygame.Surface((SCREEN_WIDTH, SCREEN_HEIGHT), pygame.SRCALPHA)
@@ -1096,8 +1096,9 @@ class App(OnlineUIMixin):
         # Final scores panel
         self._draw_final_scores()
         
-        for rect, label in self._over_btns():
-            self._draw_button(rect, label, mp)
+        if draw_buttons:
+            for rect, label in self._over_btns():
+                self._draw_button(rect, label, mp)
 
     def _draw_final_scores(self):
         """Draw final scores panel in game over screen."""
