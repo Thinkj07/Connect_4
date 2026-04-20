@@ -184,72 +184,37 @@ The client's default server URL is `http://localhost:8000` — edit the URL
 field on the *Online* screen to point at a remote server. Deploy the server
 to Render, Railway, Fly.io, or any ASGI-compatible host for public access.
 
-### Deploy on Fly.io
+### Share your local server with ngrok
 
-The repo includes `Dockerfile`, `.dockerignore`, and `fly.toml` so you can ship
-the same ASGI app (`server.main:socket_app`) to [Fly.io](https://fly.io).
+Use ngrok when you want **two computers on different networks** to play
+online without router port-forwarding.
 
-**Prerequisites**
-
-1. Install [flyctl](https://fly.io/docs/hands-on/install-flyctl/) and create a Fly account.
-2. Log in: `fly auth login`.
-
-**One-time setup**
-
-1. Open `fly.toml` and set `app` to a **globally unique** name (Fly rejects
-   names that are already taken). Example: `myname-connectfour-server`.
-2. Optionally change `primary_region` (e.g. `sin` Singapore, `hkg` Hong Kong,
-   `nrt` Tokyo) so players near you get lower latency.
-
-**Deploy**
-
-From the **repository root** (the folder that contains `Dockerfile` and
-`fly.toml`):
+1. Start the server on your machine (host):
 
 ```bash
-fly deploy
+cd server
+pip install -r requirements.txt
+python main.py
+# or:
+uvicorn server.main:socket_app --host 0.0.0.0 --port 8000
 ```
 
-If Fly reports that the app does not exist yet, create it first (use the same
-name as in `fly.toml`):
+2. In a second terminal, start ngrok:
 
 ```bash
-fly apps create myname-connectfour-server
-fly deploy
+ngrok http 8000
 ```
 
-Or run an interactive wizard (may generate a second config — prefer editing
-the provided `fly.toml` instead of duplicating):
+3. Copy the **Forwarding** URL that ngrok prints (prefer the `https://...`
+one), for example: `https://abc123.ngrok-free.app`.
 
-```bash
-fly launch
-```
+4. On every client PC: open the game → *Online* → set **Server URL** to that
+ngrok URL (no trailing path).
 
-**After deploy**
+Notes:
 
-- App URL: `https://<app-name>.fly.dev`
-- Health: `https://<app-name>.fly.dev/healthz`
-- In the game: *Online* → set **Server URL** to `https://<app-name>.fly.dev`
-  (no trailing path; Socket.IO uses the same origin).
-
-**Useful commands**
-
-| Command        | Purpose                          |
-| -------------- | -------------------------------- |
-| `fly status`   | Machine state                    |
-| `fly logs`     | Server stdout / errors           |
-| `fly ssh console` | Shell inside the running VM   |
-
-**Operational notes**
-
-- Rooms and games are **in-memory** on one process. Keep **a single machine**
-  (default here) so all players hit the same state. Do not scale out multiple
-  VMs for this server without redesigning storage.
-- `min_machines_running = 0` saves cost but the first request after idle can
-  cold-start. Set `min_machines_running = 1` in `fly.toml` if you want the
-  app always warm (uses more free-tier hours).
-- Optional secrets: `fly secrets set CORS_ORIGINS="*"` — only needed if you
-  change defaults in `server/config.py`.
+- The free ngrok URL changes every time you restart ngrok.
+- Keep both `uvicorn` and `ngrok` running while you play.
 
 ## Save / Load
 
@@ -323,3 +288,10 @@ Error codes: `ROOM_NOT_FOUND`, `ROOM_FULL`, `ROOM_IN_PROGRESS`, `NOT_HOST`,
 
 See `shared/protocol.py` for the full set of constants and payload
 dataclasses.
+
+Terminal 1
+ngrok config add-authtoken 3CZyobh3IOkKB7OBcmrtefJvVRc_4a6VEPDLfNpgNarD6C33m
+python -m uvicorn server.main:socket_app --host 0.0.0.0 --port 8000        
+
+Terminal 2
+ngrok http 8000

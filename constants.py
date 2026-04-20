@@ -84,7 +84,7 @@ MODE_MULTI = "multiplayer"
 MODE_ONLINE = "online"
 
 # Online settings
-DEFAULT_SERVER_URL = "http://localhost:8000"
+DEFAULT_SERVER_URL = "tcp://0.tcp.ap.ngrok.io:"
 PRODUCTION_SERVER_URL = "https://your-server.onrender.com"
 CONNECTION_TIMEOUT = 10
 RECONNECT_ATTEMPTS = 3
