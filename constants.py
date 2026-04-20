@@ -84,7 +84,7 @@ MODE_MULTI = "multiplayer"
 MODE_ONLINE = "online"
 
 # Online settings
-DEFAULT_SERVER_URL = "http://0.tcp.ap.ngrok.io:"
+DEFAULT_SERVER_URL = "https://rectify-equate-jeep.ngrok-free.dev"
 PRODUCTION_SERVER_URL = "https://your-server.onrender.com"
 CONNECTION_TIMEOUT = 10
 RECONNECT_ATTEMPTS = 3
